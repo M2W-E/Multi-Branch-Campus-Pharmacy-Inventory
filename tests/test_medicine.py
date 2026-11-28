@@ -93,6 +93,22 @@ class MedicineValidationTests(unittest.TestCase):
                     medicine = medicine_class("M1", "Demo", price, 0)
                     self.assertEqual(medicine.unit_price, Decimal(price))
 
+    def test_price_input_is_not_rounded_by_decimal_context(self):
+        for medicine_class in MEDICINE_CLASSES:
+            with self.subTest(cls=medicine_class.__name__):
+                with localcontext() as context:
+                    context.prec = 2
+                    medicine = medicine_class("M1", "Demo", "123.456789", 0)
+                self.assertEqual(medicine.unit_price, Decimal("123.456789"))
+
+    def test_medicine_instances_have_independent_values(self):
+        first = OrdinaryMedicine("M1", "First", "1.25", 1)
+        second = OrdinaryMedicine("M2", "Second", "1.25", 1)
+        first.name = "Changed"
+        first.unit_price = "2.50"
+        self.assertEqual(second.name, "Second")
+        self.assertEqual(second.unit_price, Decimal("1.25"))
+
     def test_reorder_level_accepts_zero_and_positive_integers(self):
         for medicine_class in MEDICINE_CLASSES:
             for level in (0, 1, 100, 2**63 - 1):
@@ -285,6 +301,15 @@ class MedicineAuthorizationTests(unittest.TestCase):
         previous = self.allowed.copy()
         self.controlled.can_dispense("PRESC-DEMO-OK", self.allowed)
         self.assertEqual(self.allowed, previous)
+
+    def test_allow_list_revocation_is_observed_on_next_call(self):
+        self.assertTrue(
+            self.controlled.can_dispense("PRESC-DEMO-OK", self.allowed)
+        )
+        self.allowed.remove("PRESC-DEMO-OK")
+        self.assertFalse(
+            self.controlled.can_dispense("PRESC-DEMO-OK", self.allowed)
+        )
 
     def test_both_concrete_classes_inherit_from_medicine(self):
         self.assertIsInstance(self.ordinary, Medicine)
