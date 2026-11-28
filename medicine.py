@@ -144,3 +144,44 @@ class OrdinaryMedicine(Medicine):
     ) -> bool:
         """Return True regardless of prescriber authorization inputs."""
         return True
+
+
+class ControlledMedicine(Medicine):
+    """A controlled medicine requiring an explicitly authorised prescriber."""
+
+    def __init__(
+        self,
+        medicine_code: str,
+        name: str,
+        unit_price: PriceInput,
+        reorder_level: int,
+    ) -> None:
+        super().__init__(
+            medicine_code, name, unit_price, reorder_level, "controlled"
+        )
+
+    def can_dispense(
+        self,
+        prescriber_code: str | None = None,
+        authorised_prescribers: Collection[str] | None = None,
+    ) -> bool:
+        """Match a non-blank code exactly against a supplied collection.
+
+        Missing/invalid codes or a missing allow-list return False. Codes are
+        case-sensitive and are not stripped, matching SQLite's default lookup.
+        A malformed allow-list raises TypeError or ValueError rather than
+        allowing accidental substring matching against a single string.
+        """
+        if not isinstance(prescriber_code, str) or not prescriber_code.strip():
+            return False
+        if authorised_prescribers is None:
+            return False
+        if isinstance(authorised_prescribers, (str, bytes)) or not isinstance(
+            authorised_prescribers, Collection
+        ):
+            raise TypeError(
+                "authorised_prescribers must be a collection of codes."
+            )
+        for code in authorised_prescribers:
+            _validate_text(code, "authorised prescriber code")
+        return prescriber_code in authorised_prescribers
