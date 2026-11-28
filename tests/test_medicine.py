@@ -202,5 +202,111 @@ class MedicineValidationTests(unittest.TestCase):
                     self.assertEqual(medicine.medicine_type, original_type)
 
 
+class MedicineAuthorizationTests(unittest.TestCase):
+    """Check overriding, polymorphism, and exact allow-list matching."""
+
+    def setUp(self):
+        self.ordinary = OrdinaryMedicine("M1", "Ordinary demo", 1, 0)
+        self.controlled = ControlledMedicine("M2", "Controlled demo", 2, 0)
+        self.allowed = {"PRESC-DEMO-OK", "PRESC-DEMO-OTHER"}
+
+    def test_ordinary_medicine_requires_no_authorization(self):
+        self.assertTrue(self.ordinary.can_dispense())
+        self.assertTrue(self.ordinary.can_dispense(None, set()))
+        self.assertTrue(self.ordinary.can_dispense("UNKNOWN", self.allowed))
+        self.assertTrue(self.ordinary.can_dispense("", self.allowed))
+
+    def test_ordinary_medicine_ignores_malformed_authorization_inputs(self):
+        self.assertTrue(self.ordinary.can_dispense(True, "invalid allow-list"))
+
+    def test_controlled_medicine_accepts_authorized_code(self):
+        for code in self.allowed:
+            with self.subTest(code=code):
+                self.assertIs(
+                    self.controlled.can_dispense(code, self.allowed), True
+                )
+
+    def test_controlled_medicine_rejects_unknown_code(self):
+        self.assertIs(
+            self.controlled.can_dispense("UNKNOWN", self.allowed), False
+        )
+
+    def test_controlled_medicine_rejects_missing_or_invalid_code(self):
+        for code in (None, "", " ", "\t\n", True, False, 123, []):
+            with self.subTest(code=code):
+                self.assertIs(
+                    self.controlled.can_dispense(code, self.allowed), False
+                )
+
+    def test_controlled_medicine_rejects_missing_or_empty_allow_list(self):
+        self.assertFalse(self.controlled.can_dispense())
+        self.assertFalse(self.controlled.can_dispense("PRESC-DEMO-OK"))
+        self.assertFalse(self.controlled.can_dispense("PRESC-DEMO-OK", set()))
+
+    def test_controlled_authorization_is_exact_and_case_sensitive(self):
+        for code in ("presc-demo-ok", "PRESC", "PRESC-DEMO-OK "):
+            with self.subTest(code=code):
+                self.assertFalse(
+                    self.controlled.can_dispense(code, self.allowed)
+                )
+
+    def test_controlled_medicine_supports_standard_code_collections(self):
+        for allowed in (
+            ["PRESC-DEMO-OK"], ("PRESC-DEMO-OK",),
+            {"PRESC-DEMO-OK"}, frozenset({"PRESC-DEMO-OK"}),
+        ):
+            with self.subTest(collection=type(allowed).__name__):
+                self.assertTrue(
+                    self.controlled.can_dispense("PRESC-DEMO-OK", allowed)
+                )
+
+    def test_single_string_cannot_authorize_by_substring(self):
+        for allowed in ("PRESC-DEMO-OK", b"PRESC-DEMO-OK"):
+            with self.subTest(allowed=allowed):
+                with self.assertRaisesRegex(TypeError, "collection"):
+                    self.controlled.can_dispense("PRESC", allowed)
+
+    def test_non_collection_allow_lists_are_rejected(self):
+        for allowed in (True, 1, iter(["PRESC-DEMO-OK"])):
+            with self.subTest(allowed=allowed):
+                with self.assertRaisesRegex(TypeError, "collection"):
+                    self.controlled.can_dispense("PRESC-DEMO-OK", allowed)
+
+    def test_malformed_allow_list_entries_are_rejected(self):
+        for allowed, exception in (
+            ([None], TypeError), ([True], TypeError),
+            ([123], TypeError), ([""], ValueError), ([" "], ValueError),
+        ):
+            with self.subTest(allowed=allowed):
+                with self.assertRaisesRegex(exception, "prescriber code"):
+                    self.controlled.can_dispense("PRESC-DEMO-OK", allowed)
+
+    def test_authorization_does_not_modify_supplied_allow_list(self):
+        previous = self.allowed.copy()
+        self.controlled.can_dispense("PRESC-DEMO-OK", self.allowed)
+        self.assertEqual(self.allowed, previous)
+
+    def test_both_concrete_classes_inherit_from_medicine(self):
+        self.assertIsInstance(self.ordinary, Medicine)
+        self.assertIsInstance(self.controlled, Medicine)
+
+    def test_parent_is_abstract(self):
+        with self.assertRaises(TypeError):
+            Medicine("M1", "Demo", 1, 0, "ordinary")
+
+    def test_polymorphic_calls_use_each_medicine_policy(self):
+        medicines: list[Medicine] = [self.ordinary, self.controlled]
+        self.assertEqual(
+            [item.can_dispense() for item in medicines], [True, False]
+        )
+        self.assertEqual(
+            [
+                item.can_dispense("PRESC-DEMO-OK", self.allowed)
+                for item in medicines
+            ],
+            [True, True],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
