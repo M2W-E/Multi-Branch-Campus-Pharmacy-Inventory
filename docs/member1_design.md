@@ -276,7 +276,7 @@ GitHub's branch reference matched this snapshot during inspection.
 | Reads medicine `.code`, `.price`, `.needs_authorisation()` | Map to `.medicine_code`, `.unit_price`, and `.medicine_type`, or use a GUI-facing adapter |
 | Calls `Prescription(patient, branch, prescriber, lines)` | Supply an explicit prescription ID and named fields, including keyword-only `lines` |
 | Converts selected prescription ID with `int(...)` | Preserve the schema's text prescription IDs, such as `RX-DEMO-001` |
-| Shows Enum directly | Display/persist `.status.value` |
+| Prescription table consumes display-ready service rows | Format `.status.value` in the service/GUI mapping |
 | Handles ValueError specially; catches TypeError generically | Map form parsing/validation errors to meaningful user feedback |
 
 These issues are reproduced using actual GUI callback ASTs with fake entries
@@ -332,3 +332,145 @@ integration findings, not claimed fixes in other members' code.
 - Contract tests cover the reviewed commits, not unseen future branch changes.
 - Full application/GUI execution and concurrent stock deduction are outside
   Member 1's implementation and remain integration work.
+
+## 14. Testing methodology and actual evidence
+
+Tests use standard-library `unittest`, table-driven `subTest()` cases, frozen
+value checks, read-only property checks, state-transition tests and repository
+round trips. A test count is the number of unittest methods, not the number of
+individual subcases and not a measured source-coverage percentage.
+
+Recorded on 28 November 2026 using Python **3.13.15**:
+
+| Test file | Executed tests | Result |
+|---|---:|---|
+| `tests/test_medicine.py` | 37 | Passed |
+| `tests/test_prescription.py` | 50 | Passed |
+| `tests/test_integration_contracts.py` | 19 | Passed |
+| Complete discovery | **106** | **Passed; zero failures, errors or skips** |
+
+Actual final combined run before this evidence entry:
+
+```text
+python -B -m unittest discover -s tests -v
+
+Ran 106 tests in 2.782s
+
+OK
+```
+
+The original 34 medicine tests remain, with three additional cases covering
+Decimal context precision, independent object state, and allow-list revocation.
+Prescription tests include all statuses, both permitted transitions, every
+terminal-state rejection, invalid types/values, immutable lines, duplicate
+summation, iterable inputs and large aggregate quantities.
+
+The 19 contract tests comprise 11 database and eight GUI checks. They read
+specific reviewed commits using `git show`. The database modules execute only
+in isolated test module namespaces with an in-memory SQLite connection. GUI
+callback methods are extracted from the real source ASTs and invoked with fake
+entries/service objects; no Tkinter window is opened. The callback harness
+lets validation exceptions propagate so their cause can be asserted directly.
+
+Tests named `test_known_gap_*` deliberately assert the reproduced limitation or
+failure. Their passing result **does not mean those integration issues have
+been fixed**. Update the reviewed commit constants and re-evaluate expectations
+when other members publish new interfaces.
+
+No Member 2/5 files are modified or copied into this branch by these tests.
+No live GitHub access, disk database, global Decimal adapter or dependency
+installation is required. If Git or a pinned commit is absent, the affected
+snapshot tests report explicit skips. The recorded run above had no skips.
+
+## 15. Requirements traceability
+
+Test references below are class/method names in the files listed in section 1.
+
+| ID | Requirement | Implementation or document | Executable evidence |
+|---|---|---|---|
+| M01 | Shared abstract medicine contract | `Medicine`, `can_dispense()` | `test_parent_is_abstract`, `test_both_concrete_classes_inherit_from_medicine` |
+| M02 | Validated medicine identifiers | Medicine code/name properties | `test_blank_codes_and_names_are_rejected`, `test_non_string_codes_and_names_are_rejected` |
+| M03 | Positive finite Decimal prices | `unit_price` setter | `test_supported_price_inputs_become_decimal`, `test_non_finite_prices_are_rejected`, `test_zero_and_negative_prices_are_rejected` |
+| M04 | Non-negative integer reorder levels; reject bool | `reorder_level` setter | `test_non_integer_reorder_levels_are_rejected`, `test_negative_reorder_level_is_rejected` |
+| M05 | Encapsulation and safe invalid updates | Validated/read-only properties | `test_invalid_updates_preserve_previous_values`, `test_medicine_type_cannot_be_changed` |
+| M06 | Ordinary authorization policy | `OrdinaryMedicine.can_dispense()` | `test_ordinary_medicine_requires_no_authorization` |
+| M07 | Exact controlled allow-list policy | `ControlledMedicine.can_dispense()` | `test_controlled_medicine_accepts_authorized_code`, `test_controlled_authorization_is_exact_and_case_sensitive`, `test_single_string_cannot_authorize_by_substring` |
+| M08 | Overriding and polymorphism | Both concrete medicine methods | `test_polymorphic_calls_use_each_medicine_policy` |
+| M09 | Context/instance/revocation boundaries | Existing medicine implementation | `test_price_input_is_not_rounded_by_decimal_context`, `test_medicine_instances_have_independent_values`, `test_allow_list_revocation_is_observed_on_next_call` |
+| P01 | Database-compatible status Enum | `PrescriptionStatus` | `PrescriptionStatusTests` |
+| P02 | Immutable validated line values | `PrescriptionLine` | `PrescriptionLineTests` |
+| P03 | Positive integer quantities; reject bool | Line `__post_init__()` | `test_boolean_quantities_are_rejected`, `test_zero_and_negative_quantities_are_rejected` |
+| P04 | Required prescription/patient/branch IDs | Prescription constructor | `test_blank_required_identifiers_are_rejected`, `test_non_string_required_identifiers_are_rejected` |
+| P05 | Optional prescriber handling | Prescription constructor | `test_blank_optional_prescriber_becomes_none`, `test_invalid_prescriber_types_are_rejected` |
+| P06 | Non-empty multi-line composition | Constructor and `lines` property | `test_multiple_different_medicine_lines`, `test_empty_line_collections_are_rejected`, `test_external_list_edits_do_not_change_prescription` |
+| P07 | Duplicate-code handling | Consolidated line tuple | `test_duplicate_medicine_codes_are_summed`, `test_duplicate_consolidation_keeps_first_seen_order`, `test_duplicate_sum_preserves_large_integer_total` |
+| P08 | Default pending/reconstruct historical status | Constructor and `status` property | `test_valid_default_prescription`, `test_all_persisted_statuses_can_be_reconstructed` |
+| P09 | Prevent direct invalid status assignment | Read-only `status` | `test_direct_status_assignment_is_rejected`, `test_invalid_status_strings_are_rejected` |
+| P10 | Pending-only dispense/cancel transitions | `_require_pending()`, lifecycle methods | `PrescriptionLifecycleTests` |
+| P11 | Prevent legacy constructor corruption | Keyword-only `lines` | `test_ambiguous_legacy_positional_constructor_is_rejected` |
+| I01 | Database field/status/line compatibility | Section 9 record mapping | `test_medicine_field_and_type_round_trip_with_boundary_conversion`, `test_prescription_round_trip_statuses_and_optional_prescribers` |
+| I02 | Decimal binding/precision/range findings | Section 9 findings | Database `test_known_gap_*` cases |
+| I03 | Repository duplicates and caller transactions | Sections 9-10 | `test_duplicate_rows_are_consolidated_on_reconstruction`, `test_repository_respects_caller_rollback` |
+| I04 | GUI compatibility review without changes | Section 11 | `GuiContractTests` |
+| D01 | UML with inheritance/composition/multiplicity | `docs/uml_diagram.md` | Source AST class/method inventory and relationship checks |
+| D02 | OOP rationale, exceptions and integration contracts | Sections 3-13 | Source/interface review plus tests above |
+| D03 | Actual evidence, reproducibility and AI declaration | Sections 14-18 | Executed commands and recorded results |
+
+The table maps the supplied Member 1 requirements to evidence. An official
+marking rubric was not supplied, so this is not an assertion about examination
+marks or the completion percentage of the six-member application.
+
+## 16. Quality and security review
+
+- Reviewed the domain source, tests, public signatures and field mappings.
+- Compiled every local Python source using `compile()` without writing bytecode.
+- Checked source lines against a 79-column limit and checked trailing whitespace.
+- Used `git diff --check` for the changes and reviewed the changed-file list.
+- Compared UML classes/methods, inheritance, composition, multiplicity, status
+  vocabulary and keyword-only constructor notes with source. Mermaid Markdown
+  was checked as source; no separate diagram rendering is claimed.
+- Reviewed imports: production modules use only standard-library modules;
+  tests additionally import local models and standard-library test utilities.
+- Verified the production medicine module and README against their earlier
+  SHA-256 values; both remained byte-for-byte unchanged during this stage.
+- Reviewed changed text and scanned common private-key/token/password patterns.
+  No credentials or real patient records were found. All demonstration patient,
+  prescription and prescriber identifiers are fictional.
+- The domain performs no SQL, shell command, file write or network operation.
+  Test subprocess calls pass argument lists with fixed Git operations and do
+  not use `shell=True`. Test-only `exec()` compiles the explicitly reviewed Git
+  snapshots, never user-entered form text.
+- Checked the configured Git author as `masabacarlm` with the repository's
+  existing email. No identity override, artificial empty commit, timestamp
+  override, history rewrite, merge or force-push is part of this workflow.
+
+## 17. Reproducing the tests
+
+Use Python **3.10 or later** (union annotations and slotted dataclasses are
+used); the recorded environment is Python 3.13.15. No pip installation is
+needed. Run these commands from the repository root:
+
+```powershell
+python -B -m unittest discover -s tests -p test_medicine.py -v
+python -B -m unittest discover -s tests -p test_prescription.py -v
+python -B -m unittest discover -s tests -p test_integration_contracts.py -v
+python -B -m unittest discover -s tests -v
+git diff --check
+git status --short --branch
+```
+
+`-B` prevents bytecode cache files. Contract tests require local access to the
+reviewed database and GUI commits. A normal clone fetching all remote branches
+includes them while those commits remain reachable. If the snapshots are
+missing, fetch the relevant branches through the project's normal Git workflow
+and rerun; the tests themselves perform no fetch or dependency installation.
+
+## 18. Transparent AI assistance declaration
+
+OpenAI Codex assisted Member 1 with domain-model implementation, test design and
+execution, interface review, UML, documentation, defect investigation, and Git
+operations at the user's request. The contribution therefore includes
+AI-assisted work. Test results above describe commands actually executed in
+this workspace. Other members retain authorship and ownership of the reviewed
+database and GUI code. Member 1 should review and understand the delivered
+design and retain this declaration with the project evidence.
