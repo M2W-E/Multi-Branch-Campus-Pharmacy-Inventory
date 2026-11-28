@@ -55,6 +55,7 @@ class Prescription:
     Identity, lines, prescriber and status are read-only public properties.
     Valid persisted statuses can be supplied when reconstructing a record.
     Blank optional prescriber input becomes None; other codes stay exact.
+    Lines are keyword-only to reject ambiguous legacy positional calls.
     """
 
     def __init__(
@@ -62,6 +63,7 @@ class Prescription:
         prescription_id: str,
         patient_id: str,
         branch_id: str,
+        *,
         lines: Iterable[PrescriptionLine],
         prescriber_code: str | None = None,
         status: PrescriptionStatus | str = PrescriptionStatus.PENDING,

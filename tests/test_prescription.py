@@ -120,6 +120,13 @@ class PrescriptionConstructionTests(unittest.TestCase):
         self.assertIs(prescription.status, PrescriptionStatus.PENDING)
         self.assertEqual(prescription.lines, (PrescriptionLine("M1", 2),))
 
+    def test_ambiguous_legacy_positional_constructor_is_rejected(self):
+        with self.assertRaises(TypeError):
+            Prescription(
+                "PAT-DEMO-001", "BR-MAIN", "PRESC-DEMO-OK",
+                [PrescriptionLine("M1", 1)],
+            )
+
     def test_valid_optional_prescriber_code(self):
         prescription = self.make_prescription(prescriber_code="PRESC-DEMO-OK")
         self.assertEqual(prescription.prescriber_code, "PRESC-DEMO-OK")
@@ -282,7 +289,7 @@ class PrescriptionLifecycleTests(unittest.TestCase):
     def make_prescription(self, status=PrescriptionStatus.PENDING):
         return Prescription(
             "RX-DEMO-001", "PAT-DEMO-001", "BR-MAIN",
-            [PrescriptionLine("M1", 1)], status=status,
+            lines=[PrescriptionLine("M1", 1)], status=status,
         )
 
     def test_pending_can_be_marked_dispensed(self):
