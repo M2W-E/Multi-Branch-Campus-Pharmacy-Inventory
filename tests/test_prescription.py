@@ -220,6 +220,12 @@ class PrescriptionConstructionTests(unittest.TestCase):
             PrescriptionLine("M3", 1),
         ))
 
+    def test_duplicate_sum_preserves_large_integer_total(self):
+        prescription = self.make_prescription(lines=[
+            PrescriptionLine("M1", 2**63 - 1), PrescriptionLine("M1", 1),
+        ])
+        self.assertEqual(prescription.lines[0].quantity, 2**63)
+
     def test_distinct_case_and_whitespace_codes_are_not_combined(self):
         lines = [
             PrescriptionLine("M1", 1), PrescriptionLine("m1", 1),
