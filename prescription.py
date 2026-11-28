@@ -133,3 +133,25 @@ class Prescription:
     def status(self) -> PrescriptionStatus:
         """Return the lifecycle status; serialize using status.value."""
         return self._status
+
+    def _require_pending(self) -> None:
+        """Reject further lifecycle actions on a terminal prescription."""
+        if self._status is not PrescriptionStatus.PENDING:
+            raise ValueError(
+                f"Prescription {self.prescription_id} is {self.status.value}; "
+                "only pending prescriptions can be dispensed or cancelled."
+            )
+
+    def mark_dispensed(self) -> None:
+        """Record pending-to-dispensed after Member 4 completes dispensing.
+
+        This performs no authorization, stock deduction, or persistence. The
+        service must enforce those rules atomically and manage stale records.
+        """
+        self._require_pending()
+        self._status = PrescriptionStatus.DISPENSED
+
+    def cancel(self) -> None:
+        """Move a pending prescription to the terminal cancelled state."""
+        self._require_pending()
+        self._status = PrescriptionStatus.CANCELLED

@@ -276,5 +276,79 @@ class PrescriptionConstructionTests(unittest.TestCase):
                 self.assertIs(prescription.status, PrescriptionStatus.PENDING)
 
 
+class PrescriptionLifecycleTests(unittest.TestCase):
+    """Exercise allowed transitions and reject every terminal-state action."""
+
+    def make_prescription(self, status=PrescriptionStatus.PENDING):
+        return Prescription(
+            "RX-DEMO-001", "PAT-DEMO-001", "BR-MAIN",
+            [PrescriptionLine("M1", 1)], status=status,
+        )
+
+    def test_pending_can_be_marked_dispensed(self):
+        prescription = self.make_prescription()
+        self.assertIsNone(prescription.mark_dispensed())
+        self.assertIs(prescription.status, PrescriptionStatus.DISPENSED)
+
+    def test_pending_can_be_cancelled(self):
+        prescription = self.make_prescription()
+        self.assertIsNone(prescription.cancel())
+        self.assertIs(prescription.status, PrescriptionStatus.CANCELLED)
+
+    def test_dispensed_prescription_cannot_be_dispensed_twice(self):
+        prescription = self.make_prescription()
+        prescription.mark_dispensed()
+        with self.assertRaisesRegex(ValueError, "dispensed"):
+            prescription.mark_dispensed()
+        self.assertIs(prescription.status, PrescriptionStatus.DISPENSED)
+
+    def test_cancelled_prescription_cannot_be_dispensed(self):
+        prescription = self.make_prescription()
+        prescription.cancel()
+        with self.assertRaisesRegex(ValueError, "cancelled"):
+            prescription.mark_dispensed()
+        self.assertIs(prescription.status, PrescriptionStatus.CANCELLED)
+
+    def test_dispensed_prescription_cannot_be_cancelled(self):
+        prescription = self.make_prescription()
+        prescription.mark_dispensed()
+        with self.assertRaisesRegex(ValueError, "dispensed"):
+            prescription.cancel()
+        self.assertIs(prescription.status, PrescriptionStatus.DISPENSED)
+
+    def test_repeated_cancellation_is_rejected(self):
+        prescription = self.make_prescription()
+        prescription.cancel()
+        with self.assertRaisesRegex(ValueError, "cancelled"):
+            prescription.cancel()
+        self.assertIs(prescription.status, PrescriptionStatus.CANCELLED)
+
+    def test_reconstructed_terminal_statuses_reject_all_actions(self):
+        for status in ("dispensed", "cancelled"):
+            for method in ("mark_dispensed", "cancel"):
+                with self.subTest(status=status, method=method):
+                    prescription = self.make_prescription(status)
+                    with self.assertRaisesRegex(ValueError, "only pending"):
+                        getattr(prescription, method)()
+                    self.assertEqual(prescription.status.value, status)
+
+    def test_prescriptions_have_independent_status(self):
+        first = self.make_prescription()
+        second = self.make_prescription()
+        first.mark_dispensed()
+        self.assertIs(second.status, PrescriptionStatus.PENDING)
+
+    def test_transitions_preserve_identity_and_line_values(self):
+        for method in ("mark_dispensed", "cancel"):
+            with self.subTest(method=method):
+                prescription = self.make_prescription()
+                lines = prescription.lines
+                getattr(prescription, method)()
+                self.assertEqual(prescription.prescription_id, "RX-DEMO-001")
+                self.assertEqual(prescription.patient_id, "PAT-DEMO-001")
+                self.assertEqual(prescription.branch_id, "BR-MAIN")
+                self.assertIs(prescription.lines, lines)
+
+
 if __name__ == "__main__":
     unittest.main()
